@@ -251,7 +251,18 @@ const ModernHSCodeSearch = () => {
   return (
     <div className="modern-container">
       <div className="modern-header">
-        <h1><i>Custom 3.0</i></h1>
+        <div className="header-brand">
+          <img src="/aaziko-logo.png" alt="Aaziko" className="header-logo" />
+          <div className="header-text">
+            <h1>Aaziko Trade Map</h1>
+            <p>Simple Global Trade Analytics</p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="welcome-section">
+        <h2>Welcome to Global Trade Analytics</h2>
+        <p>Discover trade opportunities, analyze market trends, and make informed decisions with our comprehensive trade data platform.</p>
       </div>
 
       <form onSubmit={handleSearch} className="modern-form">

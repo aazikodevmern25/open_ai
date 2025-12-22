@@ -7,7 +7,7 @@
 
 .modern-header {
   background: white;
-  padding: 15px 20px;
+  padding: 15px 25px;
   border-radius: 8px;
   margin-bottom: 20px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -16,11 +16,53 @@
   align-items: center;
 }
 
-.modern-header h1 {
-  font-size: 24px;
-  font-weight: 400;
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  height: 45px;
+  width: auto;
+}
+
+.header-text h1 {
+  font-size: 18px;
+  font-weight: 600;
   margin: 0;
+  color: #0088cc;
+}
+
+.header-text p {
+  font-size: 12px;
+  color: #666;
+  margin: 2px 0 0 0;
+}
+
+.welcome-section {
+  background: white;
+  padding: 40px 30px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.welcome-section h2 {
+  font-size: 28px;
+  font-weight: 700;
   color: #333;
+  margin: 0 0 15px 0;
+}
+
+.welcome-section p {
+  font-size: 15px;
+  color: #666;
+  margin: 0;
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.6;
 }
 
 .modern-form {
