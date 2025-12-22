@@ -1,0 +1,19 @@
+{
+  "name": "hscode-ai-search",
+  "version": "1.0.0",
+  "description": "HS Code AI Search Application with React and Node.js",
+  "scripts": {
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"bgBlue.bold,bgMagenta.bold\" \"npm run server\" \"npm run client\"",
+    "server": "cd backend && node server.js",
+    "client": "cd frontend && PORT=3025 BROWSER=none npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "test-openai": "cd backend && node test-openai.js"
+  },
+  "keywords": ["hscode", "openai", "mongodb", "react", "nodejs"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

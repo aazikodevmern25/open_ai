@@ -1,0 +1,41 @@
+.App {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.app-header {
+  background: white;
+  padding: 15px 30px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.training-toggle {
+  padding: 10px 20px;
+  background: #5cb85c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.training-toggle:hover {
+  background: #4a9d4a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(92, 184, 92, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
