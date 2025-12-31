@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
 const hsCodeRoutes = require('./routes/hsCodeRoutes');
+const complianceRoutes = require('./routes/complianceRoutes');
 
 const app = express();
 
@@ -21,11 +22,12 @@ app.get('/', (req, res) => {
   res.json({ 
     success: true,
     message: 'HS Code AI Search API',
-    version: '1.0.0',
+    version: '2.0.0',
     endpoints: {
       health: '/health',
       search: '/api/hscode/search/:hsCode',
-      ask: '/api/hscode/ask'
+      ask: '/api/hscode/ask',
+      complianceAnalyze: '/api/compliance/analyze'
     }
   });
 });
@@ -37,13 +39,14 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/hscode', hsCodeRoutes);
+app.use('/api/compliance', complianceRoutes);
 
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: `Route ${req.path} not found`,
-    availableRoutes: ['/', '/health', '/api/hscode/search/:hsCode', '/api/hscode/ask']
+    availableRoutes: ['/', '/health', '/api/hscode/search/:hsCode', '/api/hscode/ask', '/api/compliance/analyze']
   });
 });
 

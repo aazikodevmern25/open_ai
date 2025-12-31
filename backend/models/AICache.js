@@ -23,7 +23,14 @@ const AICacheSchema = new mongoose.Schema({
     required: true
   },
   importantDocuments: [{
-    type: String
+    type: mongoose.Schema.Types.Mixed
+  }],
+  regulatoryInfo: {
+    type: String,
+    default: null
+  },
+  macmapMeasures: [{
+    type: mongoose.Schema.Types.Mixed
   }],
   createdAt: {
     type: Date,

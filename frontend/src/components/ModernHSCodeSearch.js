@@ -50,13 +50,15 @@ const ModernHSCodeSearch = () => {
   }, []);
 
   const [searchResults, setSearchResults] = useState(null);
+  const [macmapResults, setMacmapResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('documents');
   const [expandedSections, setExpandedSections] = useState({
     production: true,
     labeling: false,
-    documents: false
+    documents: false,
+    regulatory: false
   });
   const [aiPackagingInfo, setAiPackagingInfo] = useState(null);
   const [packagingLoading, setPackagingLoading] = useState(false);
@@ -66,6 +68,11 @@ const ModernHSCodeSearch = () => {
   const [filteredDocuments, setFilteredDocuments] = useState([]);
   const [aiDocumentsInfo, setAiDocumentsInfo] = useState(null);
   const [aiFilteredDocs, setAiFilteredDocs] = useState([]);
+  const [aiRegulatoryInfo, setAiRegulatoryInfo] = useState(null);
+  // V2 Compliance state
+  const [complianceData, setComplianceData] = useState(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [totalComplianceItems, setTotalComplianceItems] = useState(0);
 
   const handleInputChange = (e) => {
     setFormData({
@@ -85,6 +92,8 @@ const ModernHSCodeSearch = () => {
     setLoading(true);
     setError('');
     setSearchResults(null);
+    setMacmapResults(null);
+    setComplianceData(null);
 
     try {
       // Build query parameters
@@ -102,14 +111,23 @@ const ModernHSCodeSearch = () => {
         : `/api/hscode/search/${formData.hsCode}`;
       
       const response = await api.get(url);
+      
+      // Set Indian Trade Portal data
       setSearchResults(response.data);
+      
+      // Set Macmap Regulatory data (from combined response)
+      if (response.data.macmapRegulatory) {
+        setMacmapResults(response.data.macmapRegulatory);
+        console.log('Macmap Regulatory data:', response.data.macmapRegulatory.count, 'records');
+      }
       
       // Reset AI info for new search
       setAiPackagingInfo(null);
       setAiProductionInfo(null);
+      setAiRegulatoryInfo(null);
       
-      // Auto-generate production info - pass the actual data array
-      generateProductionInfo(response.data.data, formData.hsCode, formData.destinationCountry, formData.importExport);
+      // Call v2 compliance API
+      fetchComplianceData();
     } catch (err) {
       setError(err.response?.data?.message || 'Error searching HS Code');
     } finally {
@@ -117,7 +135,64 @@ const ModernHSCodeSearch = () => {
     }
   };
 
-  const generateProductionInfo = async (dataArray, hsCode, country, mode) => {
+  // V2 Compliance API call
+  const fetchComplianceData = async () => {
+    if (!formData.hsCode || !formData.destinationCountry) {
+      console.log('Missing required fields for compliance analysis');
+      return;
+    }
+
+    setComplianceLoading(true);
+    try {
+      const response = await api.post('/api/compliance/analyze', {
+        hsCode: formData.hsCode,
+        destinationCountry: formData.destinationCountry,
+        importOrExport: formData.importExport || 'Export',
+        productNotes: formData.productNotes,
+        modeOfTransport: formData.modeOfTransport,
+        exportingCountry: formData.exportingCountry,
+        incoTerms: formData.incoTerms,
+        shipmentType: formData.shipmentType
+      });
+
+      if (response.data.success) {
+        setComplianceData(response.data);
+        setTotalComplianceItems(response.data.totalItems || 0);
+        
+        // Also set legacy state for backward compatibility
+        const sections = response.data.sections;
+        if (sections?.production?.items) {
+          setAiProductionInfo(sections.production.items.map((item, i) => `${i + 1}. ${item}`).join('\n'));
+        }
+        if (sections?.packaging?.blocks) {
+          const packagingText = sections.packaging.blocks
+            .map(block => `${block.heading}:\n${block.items.map(item => `• ${item}`).join('\n')}`)
+            .join('\n\n');
+          setAiPackagingInfo(packagingText);
+        }
+        if (sections?.documents?.blocks) {
+          const docs = sections.documents.blocks.flatMap(block => block.items);
+          setAiFilteredDocs(docs);
+        }
+        
+        console.log('V2 Compliance data loaded:', response.data.totalItems, 'items');
+      }
+    } catch (err) {
+      console.error('Error fetching compliance data:', err);
+      // Fallback to v1 API
+      generateProductionInfo(
+        searchResults?.data,
+        formData.hsCode,
+        formData.destinationCountry,
+        formData.importExport,
+        macmapResults?.data || []
+      );
+    } finally {
+      setComplianceLoading(false);
+    }
+  };
+
+  const generateProductionInfo = async (dataArray, hsCode, country, mode, macmapDataArray) => {
     if (productionLoading || !dataArray) return;
     
     const cacheKey = `${hsCode}_${country}_${mode}`;
@@ -139,6 +214,7 @@ const ModernHSCodeSearch = () => {
         setAiPackagingInfo(checkResponse.data.cachedResult.packagingInfo);
         setAiDocumentsInfo(checkResponse.data.cachedResult.productionInfo);
         setAiFilteredDocs(checkResponse.data.cachedResult.importantDocuments || []);
+        setAiRegulatoryInfo(checkResponse.data.cachedResult.regulatoryInfo || null);
         setAiCache(prev => ({ ...prev, [cacheKey]: checkResponse.data.cachedResult.productionInfo }));
         setProductionLoading(false);
         return;
@@ -148,12 +224,13 @@ const ModernHSCodeSearch = () => {
     }
     
     try {
-      // Generate new AI result
+      // Generate new AI result - include macmap data
       const response = await api.post('/api/hscode/process-ai', {
         hsCode: hsCode,
         country: country,
         mode: mode,
-        data: dataArray
+        data: dataArray,
+        macmapData: macmapDataArray  // Send macmap regulatory data
       });
       
       if (response.data.success) {
@@ -161,8 +238,9 @@ const ModernHSCodeSearch = () => {
         setAiPackagingInfo(response.data.packagingInfo);
         setAiDocumentsInfo(response.data.productionInfo);
         setAiFilteredDocs(response.data.importantDocuments || []);
+        setAiRegulatoryInfo(response.data.regulatoryInfo || null);
         setAiCache(prev => ({ ...prev, [cacheKey]: response.data.productionInfo }));
-        console.log('AI processed and saved to database with', response.data.importantDocuments?.length || 0, 'important docs');
+        console.log('AI processed and saved to database with', response.data.importantDocuments?.length || 0, 'important docs and regulatory info');
       }
     } catch (err) {
       console.error('Error generating production info:', err);
@@ -464,15 +542,45 @@ const ModernHSCodeSearch = () => {
               <FileText size={18} />
               Document Requirement
             </button>
+            <button 
+              className={activeTab === 'regulatory' ? 'tab-button-active' : 'tab-button'}
+              onClick={() => setActiveTab('regulatory')}
+            >
+              <AlertCircle size={18} />
+              Regulatory Requirements ({macmapResults?.count || 0})
+            </button>
           </div>
 
           <div className="tab-content">
             {activeTab === 'documents' && (
               <div className="documents-content">
-                {productionLoading ? (
+                {complianceLoading ? (
                   <div className="loading-message">
                     <Loader size={24} className="spinner" />
                     <p>AI is filtering important documents...</p>
+                  </div>
+                ) : complianceData?.sections?.documents ? (
+                  <div className="ai-documents-section">
+                    <p className="filtered-docs-note">
+                      ✓ AI filtered documents for smooth customs clearance
+                    </p>
+                    {complianceData.sections.documents.blocks.map((block, blockIndex) => (
+                      <div key={blockIndex} className="compliance-block">
+                        <h4>{block.heading}</h4>
+                        {block.items.length > 0 ? (
+                          <div className="documents-grid">
+                            {block.items.map((doc, index) => (
+                              <div key={index} className="document-item">
+                                <FileText size={20} className="doc-icon" />
+                                <span className="doc-name">{doc}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="no-data">No specific documents in this category.</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ) : aiFilteredDocs.length > 0 ? (
                   <div className="ai-documents-grid-section">
@@ -524,13 +632,133 @@ const ModernHSCodeSearch = () => {
 
             {activeTab === 'production' && (
               <div className="production-content">
-                {/* AI-Processed Production Information */}
-                {productionLoading ? (
+                {/* V2 Info Bar */}
+                {complianceData && totalComplianceItems > 0 && (
+                  <p className="filtered-docs-note">
+                    ✓ AI filtered {totalComplianceItems} most important compliance points
+                  </p>
+                )}
+
+                {/* Loading State */}
+                {complianceLoading && (
                   <div className="loading-message">
                     <Loader size={24} className="spinner" />
-                    <p>AI is analyzing your data and filtering important information...</p>
+                    <p>AI is analyzing compliance requirements...</p>
                   </div>
-                ) : aiProductionInfo ? (
+                )}
+
+                {/* V2 Production Section */}
+                {!complianceLoading && complianceData?.sections?.production && (
+                  <div className="expandable-section">
+                    <button 
+                      className="section-header"
+                      onClick={() => setExpandedSections({...expandedSections, production: !expandedSections.production})}
+                    >
+                      <Package size={20} />
+                      <span>{complianceData.sections.production.title}</span>
+                      <ChevronDown size={20} className={expandedSections.production ? 'rotated' : ''} />
+                    </button>
+                    {expandedSections.production && (
+                      <div className="section-content">
+                        {complianceData.sections.production.items.length > 0 ? (
+                          <ul className="requirements-list">
+                            {complianceData.sections.production.items.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="no-data">No specific production requirements identified.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* V2 Packaging Section */}
+                {!complianceLoading && complianceData?.sections?.packaging && (
+                  <div className="expandable-section">
+                    <button 
+                      className="section-header collapsed"
+                      onClick={() => setExpandedSections({...expandedSections, labeling: !expandedSections.labeling})}
+                    >
+                      <Package size={20} />
+                      <span>{complianceData.sections.packaging.title}</span>
+                      <ChevronDown size={20} className={expandedSections.labeling ? 'rotated' : ''} />
+                    </button>
+                    {expandedSections.labeling && (
+                      <div className="section-content">
+                        {complianceData.sections.packaging.blocks.map((block, blockIndex) => (
+                          <div key={blockIndex} className="compliance-block">
+                            <h4>{block.heading}</h4>
+                            {block.items.length > 0 ? (
+                              <ul className="requirements-list">
+                                {block.items.map((item, itemIndex) => (
+                                  <li key={itemIndex}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="no-data">No specific requirements.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* V2 Documents Section */}
+                {!complianceLoading && complianceData?.sections?.documents && (
+                  <div className="expandable-section">
+                    <button 
+                      className="section-header collapsed"
+                      onClick={() => setExpandedSections({...expandedSections, documents: !expandedSections.documents})}
+                    >
+                      <FileText size={20} />
+                      <span>{complianceData.sections.documents.title}</span>
+                      <ChevronDown size={20} className={expandedSections.documents ? 'rotated' : ''} />
+                    </button>
+                    {expandedSections.documents && (
+                      <div className="section-content">
+                        {complianceData.sections.documents.blocks.map((block, blockIndex) => (
+                          <div key={blockIndex} className="compliance-block">
+                            <h4>{block.heading}</h4>
+                            {block.items.length > 0 ? (
+                              <ul className="requirements-list">
+                                {block.items.map((item, itemIndex) => (
+                                  <li key={itemIndex}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="no-data">No specific documents required.</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Warnings */}
+                {complianceData?.meta?.warnings?.length > 0 && (
+                  <div className="compliance-warnings">
+                    <h4><AlertCircle size={16} /> Warnings</h4>
+                    <ul>
+                      {complianceData.meta.warnings.map((warning, index) => (
+                        <li key={index}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Disclaimer */}
+                {complianceData?.disclaimer && (
+                  <p className="note" style={{marginTop: '15px', fontStyle: 'italic'}}>
+                    {complianceData.disclaimer}
+                  </p>
+                )}
+
+                {/* Fallback to legacy display if no v2 data */}
+                {!complianceLoading && !complianceData && aiProductionInfo && (
                   <div className="expandable-section">
                     <button 
                       className="section-header"
@@ -545,82 +773,142 @@ const ModernHSCodeSearch = () => {
                         <div className="ai-content">
                           <div className="ai-response" dangerouslySetInnerHTML={{ __html: aiProductionInfo.replace(/\n/g, '<br/>') }} />
                         </div>
-                        <p className="note" style={{marginTop: '15px'}}>
-                          {aiCache[`production_${formData.hsCode}_${formData.destinationCountry}_${formData.importExport}`] ? 
-                            '✓ Using cached AI analysis (search again to see instant results)' : 
-                            '✓ AI filtered and processed - showing only important information'}
-                        </p>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <p className="no-data">AI is processing your data...</p>
                 )}
-
-                {/* Expandable Section 2: Labeling & Packaging */}
-                <div className="expandable-section">
-                  <button 
-                    className="section-header collapsed"
-                    onClick={() => setExpandedSections({...expandedSections, labeling: !expandedSections.labeling})}
-                  >
-                    <Package size={20} />
-                    <span>2. LABELING & PACKAGING – What to Follow During Packing</span>
-                    <ChevronDown size={20} className={expandedSections.labeling ? 'rotated' : ''} />
-                  </button>
-                  {expandedSections.labeling && (
-                    <div className="section-content">
-                      <h4>Essential Requirements:</h4>
-                      <ul className="requirements-list">
-                        <li><strong>Label Information:</strong> Must include product name, origin country "{formData.exportingCountry || 'India'}", and HS code {formData.hsCode}</li>
-                        <li><strong>Destination Compliance:</strong> Follow {formData.destinationCountry || 'destination country'} regulations for labeling and packaging</li>
-                        <li><strong>Product Type:</strong> {searchResults?.data?.[0]?.ProductName || 'Use appropriate materials for this product'}</li>
-                        <li><strong>Certification Marks:</strong> Include all required marks and symbols as per destination requirements</li>
-                      </ul>
-                      <p className="note">Click "Packaging Type" tab for detailed AI-generated requirements</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Expandable Section 3: Documents Required */}
-                <div className="expandable-section">
-                  <button 
-                    className="section-header collapsed"
-                    onClick={() => setExpandedSections({...expandedSections, documents: !expandedSections.documents})}
-                  >
-                    <Package size={20} />
-                    <span>3. DOCUMENTS REQUIRED – For Smooth U.S. Customs Clearance</span>
-                    <ChevronDown size={20} className={expandedSections.documents ? 'rotated' : ''} />
-                  </button>
-                  {expandedSections.documents && (
-                    <div className="section-content">
-                      <p>Total Documents Required: <strong>{documents.length}</strong></p>
-                      <ul className="requirements-list">
-                        {documents.slice(0, 5).map((doc, index) => (
-                          <li key={index}>{doc.Document}</li>
-                        ))}
-                        {documents.length > 5 && <li><em>... and {documents.length - 5} more documents</em></li>}
-                      </ul>
-                      <p className="note">Click "Document Requirement" tab to see all documents</p>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
             {activeTab === 'packaging' && (
               <div className="packaging-content">
-                <h3>Packaging Requirements</h3>
-                {packagingLoading ? (
+                {/* V2 Info Bar */}
+                {complianceData?.sections?.packaging && (
+                  <p className="filtered-docs-note">
+                    ✓ AI filtered packaging and labeling requirements
+                  </p>
+                )}
+
+                {complianceLoading ? (
                   <div className="loading-message">
                     <Loader size={24} className="spinner" />
-                    <p>AI is analyzing your data to generate important packaging requirements...</p>
+                    <p>AI is analyzing packaging requirements...</p>
+                  </div>
+                ) : complianceData?.sections?.packaging ? (
+                  <div className="packaging-blocks">
+                    {complianceData.sections.packaging.blocks.map((block, blockIndex) => (
+                      <div key={blockIndex} className="compliance-block">
+                        <h4>{block.heading}</h4>
+                        {block.items.length > 0 ? (
+                          <ul className="requirements-list">
+                            {block.items.map((item, itemIndex) => (
+                              <li key={itemIndex}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="no-data">No specific requirements.</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ) : aiPackagingInfo ? (
                   <div className="ai-content">
                     <div className="ai-response" dangerouslySetInnerHTML={{ __html: aiPackagingInfo.replace(/\n/g, '<br/>') }} />
                   </div>
                 ) : (
-                  <p className="no-data">Click this tab to generate packaging requirements</p>
+                  <p className="no-data">No packaging requirements available.</p>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'regulatory' && (
+              <div className="regulatory-content">
+                <h3>Regulatory Requirements from Macmap</h3>
+                <p className="data-source-info">
+                  Data Source: macmap_regulatory collection | 
+                  Destination Country (ImportingCountry): <strong>{formData.destinationCountry || 'All'}</strong> | 
+                  Records Found: <strong>{macmapResults?.count || 0}</strong>
+                </p>
+
+                {/* AI-Processed Regulatory Summary */}
+                {aiRegulatoryInfo && (
+                  <div className="ai-regulatory-summary">
+                    <h4>🤖 AI Analysis of Regulatory Requirements</h4>
+                    <div className="ai-content">
+                      <div className="ai-response" dangerouslySetInnerHTML={{ __html: aiRegulatoryInfo.replace(/\n/g, '<br/>') }} />
+                    </div>
+                  </div>
+                )}
+                
+                {macmapResults && macmapResults.data && macmapResults.data.length > 0 ? (
+                  <div className="regulatory-list">
+                    <h4>📋 Raw Regulatory Data ({macmapResults.count} records)</h4>
+                    {macmapResults.data.map((record, index) => (
+                      <div key={index} className="regulatory-item">
+                        <div className="regulatory-header">
+                          <h4>HS Code: {record.HsCode}</h4>
+                          <span className="country-badge">
+                            {record.ExportingCountry} → {record.ImportingCountry}
+                          </span>
+                        </div>
+                        <p className="product-name">{record.ProductName}</p>
+                        
+                        {/* Measures Summary */}
+                        {record.Data && record.Data.length > 0 && (
+                          <div className="measures-section">
+                            <h5>Measures:</h5>
+                            {record.Data.map((dataItem, dataIndex) => (
+                              <div key={dataIndex} className="measure-item">
+                                <p><strong>Section:</strong> {dataItem.MeasureSection}</p>
+                                <p><strong>Direction:</strong> {dataItem.MeasureDirection}</p>
+                                <p><strong>Total Count:</strong> {dataItem.MeasureTotalCount}</p>
+                                <p><strong>HS Revision:</strong> {dataItem.HsRevision}</p>
+                                <p><strong>Data Source:</strong> {dataItem.DataSource}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* All Measures Details */}
+                        {record.AllMeasures && record.AllMeasures.length > 0 && (
+                          <div className="all-measures-section">
+                            <h5>All Measures Details ({record.AllMeasures.length}):</h5>
+                            <div className="measures-grid">
+                              {record.AllMeasures.slice(0, 5).map((measure, mIndex) => (
+                                <div key={mIndex} className="measure-card">
+                                  <p className="measure-code">{measure.Code}</p>
+                                  <p className="measure-title">{measure.Title}</p>
+                                  {measure.Summary && <p className="measure-summary">{measure.Summary}</p>}
+                                  {measure.LegislationTitle && (
+                                    <p className="measure-legislation"><strong>Legislation:</strong> {measure.LegislationTitle}</p>
+                                  )}
+                                  {measure.ImplementationAuthority && (
+                                    <p className="measure-authority"><strong>Authority:</strong> {measure.ImplementationAuthority}</p>
+                                  )}
+                                </div>
+                              ))}
+                              {record.AllMeasures.length > 5 && (
+                                <p className="more-measures">... and {record.AllMeasures.length - 5} more measures</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="regulatory-meta">
+                          <span>Source: {record.Source}</span>
+                          <span>Year: {record.Year}</span>
+                          <span>Mode: {record.Mode}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data">
+                    No regulatory data found for HS Code {formData.hsCode} 
+                    {formData.destinationCountry && ` and destination country ${formData.destinationCountry}`}.
+                    <br/><br/>
+                    <strong>Tip:</strong> The macmap_regulatory collection uses "ImportingCountry" field to match your selected Destination Country.
+                  </p>
                 )}
               </div>
             )}

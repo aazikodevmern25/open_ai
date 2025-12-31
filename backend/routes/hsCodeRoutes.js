@@ -2,8 +2,14 @@ const express = require('express');
 const router = express.Router();
 const hsCodeController = require('../controllers/hsCodeController');
 
-// Search HS Code
+// Search HS Code (both collections)
 router.get('/search/:hsCode', hsCodeController.searchHSCode);
+
+// Search only macmap_regulatory collection
+router.get('/macmap-regulatory/:hsCode', hsCodeController.searchMacmapRegulatory);
+
+// Debug endpoint to test macmap collection
+router.get('/debug-macmap', hsCodeController.debugMacmap);
 
 // Ask OpenAI about the data
 router.post('/ask', hsCodeController.askOpenAI);
